@@ -28,15 +28,11 @@ uv run scripts/test_stt.py facebook/wav2vec2-base-960h
 
 ### Options
 
+
 | Flag    | Default | Description                                               |
 | ------- | ------- | --------------------------------------------------------- |
 | `--key` | `space` | Key to hold while recording (e.g. `r`, `space`, `enter`). |
 
-Example with options:
-
-```sh
-uv run scripts/test_stt.py openai/whisper-tiny --key r
-```
 
 ### Notes
 
