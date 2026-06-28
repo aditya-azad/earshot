@@ -326,8 +326,6 @@ class TrayApp:
                     self.typer.type_text(text)
                 except Exception as exc:
                     notify("Earshot — typing error", str(exc))
-                else:
-                    notify("Earshot — transcribed", text)
         except Exception as exc:
             notify("Earshot — error", str(exc))
         finally:
