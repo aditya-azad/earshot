@@ -111,7 +111,7 @@ class Recorder:
 
 
 def main() -> None:
-    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-tiny")
+    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-large-v3")
 
     parser = argparse.ArgumentParser(
         description="Hold a key to record speech and print the model's transcription."

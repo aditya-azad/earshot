@@ -401,7 +401,7 @@ class TrayApp:
 
 
 def main() -> None:
-    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-tiny")
+    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-large-v3")
     default_key = os.environ.get("EARSHOT_KEY", "shift_r")
 
     parser = argparse.ArgumentParser(
