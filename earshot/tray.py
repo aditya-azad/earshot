@@ -36,6 +36,30 @@ import os
 import sys
 import threading
 
+# pystray's backend selector catches ImportError but not the ValueError
+# that gi.require_version raises when an AppIndicator3 typelib is absent.
+# With PyGObject installed but the typelib missing, importing pystray
+# would crash.  Select the gtk backend (native tray menu, needs only
+# Gtk-3.0) when appindicator is unavailable, or xorg when gi/Gtk itself
+# is missing — so the app always starts instead of crashing.
+if "PYSTRAY_BACKEND" not in os.environ:
+    _backend = None
+    try:
+        import gi
+
+        gi.require_version("Gtk", "3.0")
+        try:
+            gi.require_version("AppIndicator3", "0.1")
+        except ValueError:
+            try:
+                gi.require_version("AyatanaAppIndicator3", "0.1")
+            except ValueError:
+                _backend = "gtk"
+    except (ImportError, ValueError):
+        _backend = "xorg"
+    if _backend:
+        os.environ["PYSTRAY_BACKEND"] = _backend
+
 import numpy as np
 from PIL import Image, ImageDraw
 import sounddevice as sd
@@ -61,9 +85,7 @@ def _ear(
     color: tuple[int, int, int, int], cx: int, width: int, tilt: float
 ) -> Image.Image:
     ear = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    ImageDraw.Draw(ear).ellipse(
-        [cx - width // 2, 0, cx + width // 2, 34], fill=color
-    )
+    ImageDraw.Draw(ear).ellipse([cx - width // 2, 0, cx + width // 2, 34], fill=color)
     return ear.rotate(tilt, center=(cx, 17), resample=Image.Resampling.BICUBIC)
 
 
@@ -251,6 +273,7 @@ class TrayApp:
         self.last_text = ""
         self.listener: keyboard.Listener | None = None
         self.icon: Icon | None = None
+        self._menu_visible = False
 
     # -- icon / menu helpers -------------------------------------------
 
@@ -365,6 +388,62 @@ class TrayApp:
         self.recorder.stop_stream()
         icon.stop()
 
+    def _show_menu(self, icon: Icon, _item: MenuItem) -> None:
+        if self._menu_visible:
+            return
+        si = getattr(icon, "_status_icon", None)
+        if si is not None:
+            from gi.repository import Gtk
+
+            mh = getattr(icon, "_menu_handle", None)
+            if mh is not None:
+                mh.show_all()
+                mh.popup(
+                    None,
+                    None,
+                    Gtk.StatusIcon.position_menu,
+                    si,
+                    1,
+                    Gtk.get_current_event_time(),
+                )
+        elif not hasattr(icon, "_appindicator"):
+            self._menu_visible = True
+            threading.Thread(
+                target=self._zenity_popup_menu, args=(icon,), daemon=True
+            ).start()
+
+    def _zenity_popup_menu(self, icon: Icon) -> None:
+        try:
+            import subprocess
+
+            toggle = self._toggle_label(icon)
+            status = self._status_text(icon)
+            last = self._last_text_text(icon)
+            title = f"Earshot — {status} | {last}"
+            proc = subprocess.run(
+                [
+                    "zenity",
+                    "--list",
+                    "--column=Action",
+                    "--hide-header",
+                    f"--title={title}",
+                    toggle,
+                    "Quit",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            choice = proc.stdout.strip()
+            if choice == "Quit":
+                self._quit(icon, None)
+            elif choice == toggle:
+                self._toggle_listening(icon, None)
+        except Exception:
+            pass
+        finally:
+            self._menu_visible = False
+
     # -- lifecycle -----------------------------------------------------
 
     def run(self) -> None:
@@ -381,6 +460,12 @@ class TrayApp:
             title="Earshot",
             menu=Menu(
                 MenuItem(
+                    "Show Menu",
+                    self._show_menu,
+                    default=True,
+                    visible=False,
+                ),
+                MenuItem(
                     lambda i: f"Hold '{self.key_label}' to record",
                     None,
                     enabled=False,
@@ -394,6 +479,19 @@ class TrayApp:
             ),
         )
         self.icon = icon
+
+        if not hasattr(icon, "_status_icon") and not hasattr(icon, "_appindicator"):
+            try:
+                import Xlib.X as X
+
+                def _on_click(event):
+                    if event.detail in (1, 3):
+                        icon()
+
+                icon._message_handlers[X.ButtonPress] = _on_click
+            except ImportError:
+                pass
+
         icon.run()
 
 

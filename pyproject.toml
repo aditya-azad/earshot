@@ -8,6 +8,8 @@ dependencies = [
     "huggingface-hub>=1.21.0",
     "numpy>=2.5.0",
     "Pillow>=11.0.0",
+    "pycairo>=1.16.0",
+    "PyGObject<3.52",
     "pynput>=1.8.2",
     "pystray>=0.19.5",
     "sounddevice>=0.5.5",

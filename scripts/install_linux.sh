@@ -59,6 +59,38 @@ if $uninstall; then
     exit 0
 fi
 
+# ── system dependencies ──────────────────────────────────────────────
+#
+# All apt packages Earshot needs at build- and run-time.  PyGObject
+# (pystray's GTK/AppIndicator backend → native tray menu) needs the
+# dev headers and typelibs; the rest are runtime tools.
+
+SYS_PACKAGES=(
+    libgirepository1.0-dev
+    libcairo2-dev
+    gir1.2-gtk-3.0
+    gir1.2-ayatanaappindicator3-0.1
+    gnome-shell-extension-appindicator
+    libnotify-bin
+)
+# Typing tool is session-dependent: xdotool for X11, wtype for Wayland.
+case "${XDG_SESSION_TYPE:-}" in
+    wayland) SYS_PACKAGES+=(wtype) ;;
+    *)       SYS_PACKAGES+=(xdotool) ;;
+esac
+MISSING=()
+for pkg in "${SYS_PACKAGES[@]}"; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        MISSING+=("$pkg")
+    fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo "Installing system packages: ${MISSING[*]}"
+    sudo apt-get update
+    sudo apt-get install -y "${MISSING[@]}"
+fi
+
 # ── global command ────────────────────────────────────────────────────
 
 uv tool install --editable "$PROJECT_DIR"

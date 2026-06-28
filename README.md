@@ -32,7 +32,7 @@ with no reinstall needed.
 
 A single script installs the global `earshot` command (editable, via
 `uv tool`) and the desktop integration (launcher entry + icon +
-wrapper):
+wrapper), including all required system packages via `apt`:
 
 ```sh
 scripts/install_linux.sh
@@ -82,8 +82,10 @@ Run `earshot --help` or `test-stt --help` for all options.
 
 ## Requirements
 
-- GNOME `AppIndicator` extension (or equivalent KStatusNotifierItem support)
-- `notify-send` for desktop notifications
-- `xdotool` (X11) or `wtype` (Wayland) for typing
+All system packages are installed automatically by
+`scripts/install_linux.sh`.  In addition:
+
+- Enable the GNOME `AppIndicator` extension (or equivalent
+  KStatusNotifierItem support) after install.
 - On Linux, `pynput` requires an active display session (X11 or a Wayland
   session that supports global input events) to capture key presses.
