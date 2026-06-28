@@ -1,4 +1,4 @@
-# earshot
+# Earshot
 
 Speech-to-text application for Linux using HuggingFace transformers.
 
