@@ -2,36 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import sounddevice as sd
-import torch
 
-from .model import LoadedModel
-
-SAMPLE_RATE = 16000
-
-
-def transcribe(loaded: LoadedModel, audio: np.ndarray) -> str:
-    model = loaded.model
-    processor = loaded.processor
-    params = next(model.parameters())
-    device = params.device
-    dtype = params.dtype
-
-    inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-    inputs = {
-        k: v.to(device=device, dtype=dtype)
-        for k, v in inputs.items()
-        if isinstance(v, torch.Tensor)
-    }
-
-    with torch.no_grad():
-        if hasattr(model, "generate"):
-            predicted_ids = model.generate(**inputs)
-        else:
-            logits = model(**inputs).logits
-            predicted_ids = torch.argmax(logits, dim=-1)
-
-    text = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-    return text.strip()
+from .config import SAMPLE_RATE
 
 
 class Recorder:

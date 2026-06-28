@@ -59,7 +59,7 @@ uv run earshot openai/whisper-tiny --key shift_r
 uv run earshot openai/whisper-tiny --key ctrl+space
 ```
 
-The model defaults to `openai/whisper-tiny` (or `$EARSHOT_MODEL` if
+The model defaults to `openai/whisper-large-v3` (or `$EARSHOT_MODEL` if
 set).  The trigger key defaults to `shift_r` (or `$EARSHOT_KEY` if set).
 
 ### Terminal tester

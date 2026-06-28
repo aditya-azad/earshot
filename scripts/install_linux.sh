@@ -102,22 +102,10 @@ mkdir -p "$APP_DIR" "$ICON_DIR" "$BIN_DIR"
 # icon ──────────────────────────────────────────────────────────────
 
 "$UV" run --project "$PROJECT_DIR" python3 -c "
-from PIL import Image, ImageDraw
+from earshot.config import COLOR_IDLE
+from earshot.icon import make_icon
 
-color = (90, 90, 90, 255)
-
-def ear(cx, width, tilt):
-    e = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-    ImageDraw.Draw(e).ellipse([cx - width // 2, 0, cx + width // 2, 34], fill=color)
-    return e.rotate(tilt, center=(cx, 17), resample=Image.Resampling.BICUBIC)
-
-img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-img.alpha_composite(ear(19, 15, 25))
-img.alpha_composite(ear(45, 15, -25))
-d = ImageDraw.Draw(img)
-d.ellipse([21, 24, 43, 48], fill=color)
-d.ellipse([28, 42, 36, 52], fill=color)
-img.save('$ICON_FILE')
+make_icon(COLOR_IDLE).save('$ICON_FILE')
 print('Icon  -> $ICON_FILE')
 "
 

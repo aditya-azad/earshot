@@ -5,84 +5,56 @@ Hold the trigger key (default: space) to record from the microphone;
 release it to run the loaded model and print the transcribed text.
 
 Usage:
-    earshot-test openai/whisper-tiny
-    earshot-test openai/whisper-tiny --key space
-    earshot-test facebook/wav2vec2-base-960h
+    test-stt openai/whisper-tiny
+    test-stt openai/whisper-tiny --key space
+    test-stt facebook/wav2vec2-base-960h
 
 Press Esc to quit.
 """
 
 from __future__ import annotations
 
-import argparse
-import os
-import sys
 import time
 
-import torch
 from pynput import keyboard
 
-from .audio import SAMPLE_RATE, Recorder, transcribe
-from .model import load_model
-
-
-def parse_key(name: str) -> keyboard.Key | keyboard.KeyCode:
-    name = name.lower()
-    special = {
-        "space": keyboard.Key.space,
-        "enter": keyboard.Key.enter,
-        "esc": keyboard.Key.esc,
-        "tab": keyboard.Key.tab,
-        "shift": keyboard.Key.shift,
-    }
-    if name in special:
-        return special[name]
-    return keyboard.KeyCode.from_char(name)
+from .audio import Recorder
+from .cli import build_parser, load_for_cli, run_entry_point
+from .config import SAMPLE_RATE
+from .keys import normalize_key, parse_combo
+from .transcribe import transcribe
 
 
 def main() -> None:
-    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-large-v3")
-
-    parser = argparse.ArgumentParser(
-        description="Hold a key to record speech and print the model's transcription."
+    key_help = (
+        "Key to hold while recording (default: space). "
+        "Use a single char like 'r' or a name like 'space', 'enter'."
     )
-    parser.add_argument(
-        "model",
-        nargs="?",
-        default=default_model,
-        help=f"HuggingFace model id (default: {default_model}, "
-        "or $EARSHOT_MODEL if set)",
-    )
-    parser.add_argument(
-        "--key",
-        default="space",
-        help="Key to hold while recording (default: space). "
-        "Use a single char like 'r' or a name like 'space', 'enter'.",
+    parser = build_parser(
+        "Hold a key to record speech and print the model's transcription.",
+        key_default="space",
+        key_help=key_help,
     )
     args = parser.parse_args()
 
-    device = "cuda"
-    dtype = torch.float16
+    loaded = load_for_cli(args)
 
-    print(f"Loading '{args.model}' on {device} ({dtype})...")
-    loaded = load_model(args.model, device=device, dtype=dtype)
-    print("Model loaded.")
-
-    target_key = parse_key(args.key)
+    combo = parse_combo(args.key)
     recorder = Recorder()
     recorder.start_stream()
     done = False
 
     key_label = args.key
     print(
-        f"\nHold {key_label!r} to record, release to transcribe. Press Esc to quit.\n"
+        f"\nHold {key_label!r} to record, release to transcribe. "
+        "Press Esc to quit.\n"
     )
 
     def on_press(key) -> None:
         nonlocal done
         if done:
             return
-        if key == target_key and not recorder.recording:
+        if normalize_key(key, combo) in combo and not recorder.recording:
             recorder.start()
             print("[recording] ", end="", flush=True)
 
@@ -92,8 +64,8 @@ def main() -> None:
             done = True
             if recorder.recording:
                 recorder.stop()
-            return False
-        if key == target_key and recorder.recording:
+            return False  # noqa: FBT001  – pynput uses False to stop the listener
+        if normalize_key(key, combo) in combo and recorder.recording:
             start = time.perf_counter()
             audio = recorder.stop()
             if audio is None or audio.size == 0:
@@ -106,7 +78,7 @@ def main() -> None:
             print(f"=> {text}   [{elapsed:.2f}s]\n")
 
     with keyboard.Listener(
-        on_press=on_press, on_release=on_release, suppress=True
+        on_press=on_press, on_release=on_release, suppress=True  # type: ignore[bad-argument-type]
     ) as listener:
         listener.join()
 
@@ -115,8 +87,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-        sys.exit(130)
+    run_entry_point(main)

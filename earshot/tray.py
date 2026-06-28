@@ -26,159 +26,28 @@ Usage:
     earshot openai/whisper-tiny
     earshot openai/whisper-tiny --key shift_r
     earshot openai/whisper-tiny --key ctrl+space
-    earshot                  # uses $EARSHOT_MODEL or openai/whisper-tiny
+    earshot                  # uses $EARSHOT_MODEL or openai/whisper-large-v3
 """
 
 from __future__ import annotations
 
-import argparse
 import os
-import sys
 import threading
 
-# pystray's backend selector catches ImportError but not the ValueError
-# that gi.require_version raises when an AppIndicator3 typelib is absent.
-# With PyGObject installed but the typelib missing, importing pystray
-# would crash.  Select the gtk backend (native tray menu, needs only
-# Gtk-3.0) when appindicator is unavailable, or xorg when gi/Gtk itself
-# is missing — so the app always starts instead of crashing.
-if "PYSTRAY_BACKEND" not in os.environ:
-    _backend = None
-    try:
-        import gi
-
-        gi.require_version("Gtk", "3.0")
-        try:
-            gi.require_version("AppIndicator3", "0.1")
-        except ValueError:
-            try:
-                gi.require_version("AyatanaAppIndicator3", "0.1")
-            except ValueError:
-                _backend = "gtk"
-    except (ImportError, ValueError):
-        _backend = "xorg"
-    if _backend:
-        os.environ["PYSTRAY_BACKEND"] = _backend
-
 import numpy as np
-from PIL import Image, ImageDraw
-import torch
 from pynput import keyboard
 from pystray import Icon, Menu, MenuItem
 
-from .audio import Recorder, transcribe
-from .model import LoadedModel, load_model
+from .audio import Recorder
+from . import backend  # noqa: F401 – import side-effect: selects pystray backend
+from .cli import build_parser, load_for_cli, run_entry_point
+from .config import COLOR_IDLE, COLOR_RECORDING, COLOR_TRANSCRIBING, DEFAULT_KEY
+from .icon import make_icon
+from .keys import normalize_key, parse_combo, pretty_label
+from .model import LoadedModel
 from .notify import notify
-from .typing import TextTyper, make_typer
-
-COLOR_IDLE = (90, 90, 90, 255)
-COLOR_RECORDING = (220, 70, 70, 255)
-COLOR_TRANSCRIBING = (70, 130, 220, 255)
-
-
-# ── helpers ──────────────────────────────────────────────────────────
-
-
-def _ear(
-    color: tuple[int, int, int, int], cx: int, width: int, tilt: float
-) -> Image.Image:
-    ear = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    ImageDraw.Draw(ear).ellipse([cx - width // 2, 0, cx + width // 2, 34], fill=color)
-    return ear.rotate(tilt, center=(cx, 17), resample=Image.Resampling.BICUBIC)
-
-
-def make_icon(color: tuple[int, int, int, int]) -> Image.Image:
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    img.alpha_composite(_ear(color, 19, 15, 25))
-    img.alpha_composite(_ear(color, 45, 15, -25))
-    draw = ImageDraw.Draw(img)
-    draw.ellipse([21, 24, 43, 48], fill=color)
-    draw.ellipse([28, 42, 36, 52], fill=color)
-    return img
-
-
-# Named modifier keys, including right-side variants.  The right-side
-# ones are kept distinct from their left-side counterparts so a combo can
-# require a specific side (e.g. only the right Shift key).
-_MODIFIERS = {
-    name: getattr(keyboard.Key, name)
-    for name in (
-        "shift",
-        "shift_r",
-        "ctrl",
-        "ctrl_r",
-        "alt",
-        "alt_r",
-        "cmd",
-        "cmd_r",
-        "alt_gr",
-    )
-}
-
-# Left/right modifier pairs.  When a combo pins the right member, the two
-# sides are matched distinctly; otherwise both collapse to the left form.
-_MODIFIER_PAIRS = [
-    (keyboard.Key.shift, keyboard.Key.shift_r),
-    (keyboard.Key.ctrl, keyboard.Key.ctrl_r),
-    (keyboard.Key.alt, keyboard.Key.alt_r),
-    (keyboard.Key.cmd, keyboard.Key.cmd_r),
-]
-
-# Friendly names for the tray menu.
-_DISPLAY_NAMES = {
-    "shift_r": "Right Shift",
-    "shift": "Shift",
-    "ctrl_r": "Right Ctrl",
-    "ctrl": "Ctrl",
-    "alt_r": "Right Alt",
-    "alt": "Alt",
-    "cmd_r": "Right Super",
-    "cmd": "Super",
-    "alt_gr": "AltGr",
-    "space": "Space",
-    "enter": "Enter",
-    "tab": "Tab",
-    "esc": "Esc",
-}
-
-
-def pretty_label(spec: str) -> str:
-    parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
-    return " + ".join(_DISPLAY_NAMES.get(p, p) for p in parts)
-
-
-def parse_combo(spec: str) -> set:
-    """Parse a key combination such as ``shift_r`` or ``ctrl+space``.
-
-    Single characters are treated as literal keys (e.g. ``r``); anything
-    else is treated as a named key (e.g. ``space``, ``shift_r``, ``enter``).
-    Right-side modifiers (``shift_r``, ``ctrl_r``, ``alt_r``) are kept
-    distinct from the left ones, so ``shift_r`` matches only the right
-    Shift key.  Other named keys are normalised to their virtual-key code
-    so they still match while modifiers are held.
-    """
-    parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
-    if not parts:
-        raise ValueError(f"empty key combination: {spec!r}")
-    keys: set = set()
-    for p in parts:
-        if p in _MODIFIERS:
-            keys.add(_MODIFIERS[p])
-        elif len(p) == 1:
-            keys.add(keyboard.KeyCode.from_char(p))
-        else:
-            try:
-                k = keyboard.Key[p]
-            except KeyError as e:
-                raise ValueError(f"unknown key: {p!r}") from e
-            if k.value.vk is not None:
-                keys.add(keyboard.KeyCode.from_vk(k.value.vk))
-            else:
-                keys.add(k)
-    return keys
-
-
-# ── tray application ─────────────────────────────────────────────────
+from .text_input import TextTyper, make_typer
+from .transcribe import transcribe
 
 
 class TrayApp:
@@ -218,7 +87,7 @@ class TrayApp:
             return "Listening"
         return "Paused"
 
-    def _last_text_text(self, _icon: Icon) -> str:
+    def _last_text_label(self, _icon: Icon) -> str:
         if self.last_text:
             truncated = self.last_text[:50]
             if len(self.last_text) > 50:
@@ -231,36 +100,17 @@ class TrayApp:
 
     # -- keyboard callbacks --------------------------------------------
 
-    def _normalize(self, key) -> object:
-        # Like pynput's Listener.canonical, but keeps left/right modifiers
-        # distinct when the combo pins a specific side (e.g. shift_r), so
-        # only that side matches.  Generic modifier names collapse to the
-        # left form and match either side.
-        if isinstance(key, keyboard.KeyCode):
-            if key.char is not None:
-                return keyboard.KeyCode.from_char(key.char.lower())
-            return key
-        if isinstance(key, keyboard.Key):
-            for left, right in _MODIFIER_PAIRS:
-                if key in (left, right):
-                    return key if right in self.combo else left
-            if key in _MODIFIERS.values():
-                return key
-            if key.value.vk is not None:
-                return keyboard.KeyCode.from_vk(key.value.vk)
-        return key
-
     def _on_press(self, key) -> None:
         if not self.listening or self.transcribing:
             return
-        self.pressed.add(self._normalize(key))
+        self.pressed.add(normalize_key(key, self.combo))
         if not self.recording and self.combo.issubset(self.pressed):
             self.recording = True
             self.recorder.start()
             self._set_icon_color(COLOR_RECORDING)
 
     def _on_release(self, key) -> None:
-        self.pressed.discard(self._normalize(key))
+        self.pressed.discard(normalize_key(key, self.combo))
         if self.recording and not self.combo.issubset(self.pressed):
             self.recording = False
             self._set_icon_color(COLOR_TRANSCRIBING)
@@ -296,7 +146,7 @@ class TrayApp:
 
     # -- menu actions --------------------------------------------------
 
-    def _toggle_listening(self, icon: Icon, _item: MenuItem) -> None:
+    def _toggle_listening(self, icon: Icon, _item: MenuItem | None) -> None:
         self.listening = not self.listening
         if self.listening:
             self.recorder.start_stream()
@@ -309,7 +159,7 @@ class TrayApp:
         self._set_icon_color(COLOR_IDLE)
         icon.update_menu()
 
-    def _quit(self, icon: Icon, _item: MenuItem) -> None:
+    def _quit(self, icon: Icon, _item: MenuItem | None) -> None:
         self.listening = False
         if self.listener is not None:
             self.listener.stop()
@@ -321,7 +171,7 @@ class TrayApp:
             return
         si = getattr(icon, "_status_icon", None)
         if si is not None:
-            from gi.repository import Gtk
+            from gi.repository import Gtk  # type: ignore[missing-module-attribute]
 
             mh = getattr(icon, "_menu_handle", None)
             if mh is not None:
@@ -346,7 +196,7 @@ class TrayApp:
 
             toggle = self._toggle_label(icon)
             status = self._status_text(icon)
-            last = self._last_text_text(icon)
+            last = self._last_text_label(icon)
             title = f"Earshot — {status} | {last}"
             proc = subprocess.run(
                 [
@@ -399,7 +249,7 @@ class TrayApp:
                     enabled=False,
                 ),
                 MenuItem(self._status_text, None, enabled=False),
-                MenuItem(self._last_text_text, None, enabled=False),
+                MenuItem(self._last_text_label, None, enabled=False),
                 Menu.SEPARATOR,
                 MenuItem(self._toggle_label, self._toggle_listening),
                 Menu.SEPARATOR,
@@ -427,35 +277,22 @@ class TrayApp:
 
 
 def main() -> None:
-    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-large-v3")
-    default_key = os.environ.get("EARSHOT_KEY", "shift_r")
-
-    parser = argparse.ArgumentParser(
-        description="System-tray speech-to-text application for Linux."
-    )
-    parser.add_argument(
-        "model",
-        nargs="?",
-        default=default_model,
-        help=f"HuggingFace model id (default: {default_model}, "
-        "or $EARSHOT_MODEL if set)",
-    )
-    parser.add_argument(
-        "--key",
-        default=default_key,
-        help=f"Key (combination) to hold while recording (default: {default_key}, "
+    default_key = os.environ.get("EARSHOT_KEY", DEFAULT_KEY)
+    key_help = (
+        f"Key (combination) to hold while recording (default: {default_key}, "
         "or $EARSHOT_KEY if set). Combine keys with '+', e.g. 'ctrl+space', "
         "'shift_r+space', 'r'. Use 'shift_r'/'ctrl_r'/'alt_r' to require a "
-        "specific right-side modifier; 'shift'/'ctrl'/'alt' match either side.",
+        "specific right-side modifier; 'shift'/'ctrl'/'alt' match either side."
+    )
+    parser = build_parser(
+        "System-tray speech-to-text application for Linux.",
+        key_default=default_key,
+        key_help=key_help,
     )
     args = parser.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
-
-    print(f"Loading '{args.model}' on {device} ({dtype})...")
-    loaded = load_model(args.model, device=device, dtype=dtype)
-    print("Model loaded. Tray icon started — close it from the menu to quit.")
+    loaded = load_for_cli(args)
+    print("Tray icon started — close it from the menu to quit.")
 
     combo = parse_combo(args.key)
     app = TrayApp(
@@ -468,8 +305,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-        sys.exit(130)
+    run_entry_point(main)
