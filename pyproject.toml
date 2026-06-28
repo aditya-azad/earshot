@@ -6,8 +6,19 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "huggingface-hub>=1.21.0",
+    "numpy>=2.5.0",
+    "pynput>=1.8.2",
+    "sounddevice>=0.5.5",
+    "torch>=2.6.0",
     "transformers>=5.12.1",
 ]
+
+[tool.pyrefly]
+project-includes = [
+    "**/*.py*",
+    "**/*.ipynb",
+]
+search-path = ["."]
 
 [dependency-groups]
 dev = [
