@@ -31,8 +31,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -47,6 +45,8 @@ from pystray import Icon, Menu, MenuItem
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.model import LoadedModel, load_model
+from src.notify import notify
+from src.typing import TextTyper, make_typer
 
 SAMPLE_RATE = 16000
 
@@ -66,32 +66,6 @@ def make_icon(color: tuple[int, int, int, int]) -> Image.Image:
     draw.rectangle([30, 38, 34, 50], fill=color)
     draw.rectangle([22, 50, 42, 54], fill=color)
     return img
-
-
-def notify(title: str, body: str = "") -> None:
-    try:
-        subprocess.run(
-            ["notify-send", "--app-name=Earshot", title, body],
-            check=False,
-            capture_output=True,
-        )
-    except FileNotFoundError:
-        pass
-
-
-def type_text(text: str) -> None:
-    session = os.environ.get("XDG_SESSION_TYPE", "")
-    try:
-        if session == "wayland":
-            subprocess.run(["wtype", text], check=False, capture_output=True)
-        else:
-            subprocess.run(
-                ["xdotool", "type", "--clearmodifiers", text],
-                check=False,
-                capture_output=True,
-            )
-    except FileNotFoundError:
-        pass
 
 
 # Named modifier keys, including right-side variants.  The right-side
@@ -254,10 +228,12 @@ class TrayApp:
         loaded: LoadedModel,
         combo: set,
         key_label: str,
+        typer: TextTyper,
     ) -> None:
         self.loaded = loaded
         self.combo = combo
         self.key_label = key_label
+        self.typer = typer
         self.pressed: set = set()
         self.recorder = Recorder()
         self.recording = False
@@ -346,8 +322,12 @@ class TrayApp:
             text = transcribe(self.loaded, audio)
             if text:
                 self.last_text = text
-                type_text(text)
-                notify("Earshot — transcribed", text)
+                try:
+                    self.typer.type_text(text)
+                except Exception as exc:
+                    notify("Earshot — typing error", str(exc))
+                else:
+                    notify("Earshot — transcribed", text)
         except Exception as exc:
             notify("Earshot — error", str(exc))
         finally:
@@ -440,6 +420,7 @@ def main() -> None:
         loaded=loaded,
         combo=combo,
         key_label=pretty_label(args.key),
+        typer=make_typer(),
     )
     app.run()
 

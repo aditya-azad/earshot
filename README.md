@@ -26,15 +26,36 @@ uv run scripts/test_stt.py facebook/wav2vec2-base-960h
 - **Hold space** to record; **release** to transcribe.
 - **Esc** to quit.
 
-### Options
-
-
-| Flag    | Default | Description                                               |
-| ------- | ------- | --------------------------------------------------------- |
-| `--key` | `space` | Key to hold while recording (e.g. `r`, `space`, `enter`). |
-
+Run `uv run scripts/test_stt.py --help` for available options.
 
 ### Notes
 
 - On Linux, `pynput` requires an active display session (X11 or a Wayland
   session that supports global input events) to capture key presses.
+
+## Linux system-tray application
+
+`scripts/linux.py` runs as a background system-tray app. It types the
+transcription directly at your cursor using `xdotool` (X11) or `wtype`
+(Wayland).
+
+### Usage
+
+```sh
+uv run scripts/linux.py <model-id>
+uv run scripts/linux.py openai/whisper-tiny --key shift_r
+uv run scripts/linux.py openai/whisper-tiny --key ctrl+space
+```
+
+### Controls
+
+- **Hold the trigger key** to record; **release** to transcribe and type.
+- Quit from the tray menu.
+
+Run `uv run scripts/linux.py --help` for available options.
+
+### Requirements
+
+- GNOME `AppIndicator` extension (or equivalent KStatusNotifierItem support)
+- `notify-send` for desktop notifications
+- `xdotool` (X11) or `wtype` (Wayland) for typing
