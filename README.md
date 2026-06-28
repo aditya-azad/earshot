@@ -81,3 +81,9 @@ Run `earshot --help` or `test-stt --help` for all options.
 - `xdotool` (X11) or `wtype` (Wayland) for typing
 - On Linux, `pynput` requires an active display session (X11 or a Wayland
   session that supports global input events) to capture key presses.
+
+## Other OS support
+
+- [x] Linux
+- [ ] MacOS
+- [ ] Windows
