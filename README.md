@@ -1,12 +1,12 @@
 # earshot
 
+Speech-to-text application for Linux using HuggingFace transformers.
+
 ## OS support
 
 - [x] Linux
 - [ ] MacOS
 - [ ] Windows
-
-Speech-to-text application for Linux using HuggingFace transformers.
 
 ## Installation
 
