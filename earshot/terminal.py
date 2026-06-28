@@ -11,6 +11,7 @@ Usage:
 
 Press Esc to quit.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,14 +19,11 @@ import os
 import sys
 import time
 
-import numpy as np
-import sounddevice as sd
 import torch
 from pynput import keyboard
 
-from .model import LoadedModel, load_model
-
-SAMPLE_RATE = 16000
+from .audio import SAMPLE_RATE, Recorder, transcribe
+from .model import load_model
 
 
 def parse_key(name: str) -> keyboard.Key | keyboard.KeyCode:
@@ -40,74 +38,6 @@ def parse_key(name: str) -> keyboard.Key | keyboard.KeyCode:
     if name in special:
         return special[name]
     return keyboard.KeyCode.from_char(name)
-
-
-def transcribe(loaded: LoadedModel, audio: np.ndarray) -> str:
-    model = loaded.model
-    processor = loaded.processor
-    params = next(model.parameters())
-    device = params.device
-    dtype = params.dtype
-
-    inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-    inputs = {
-        k: v.to(device=device, dtype=dtype)
-        for k, v in inputs.items()
-        if isinstance(v, torch.Tensor)
-    }
-
-    with torch.no_grad():
-        if hasattr(model, "generate"):
-            predicted_ids = model.generate(**inputs)
-        else:
-            logits = model(**inputs).logits
-            predicted_ids = torch.argmax(logits, dim=-1)
-
-    text = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-    return text.strip()
-
-
-class Recorder:
-    def __init__(self) -> None:
-        self._chunks: list[np.ndarray] = []
-        self.recording = False
-        self._stream: sd.InputStream | None = None
-
-    def start_stream(self) -> None:
-        if self._stream is not None:
-            return
-        self._stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            callback=self._callback,
-        )
-        self._stream.start()
-
-    def stop_stream(self) -> None:
-        if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
-
-    def start(self) -> None:
-        if self.recording:
-            return
-        self._chunks = []
-        self.recording = True
-        print("[recording] ", end="", flush=True)
-
-    def _callback(self, indata: np.ndarray, frames, time, status) -> None:  # noqa: A002
-        if self.recording:
-            self._chunks.append(indata.copy())
-
-    def stop(self) -> np.ndarray | None:
-        if not self.recording:
-            return None
-        self.recording = False
-        if not self._chunks:
-            return None
-        return np.concatenate(self._chunks, axis=0).flatten()
 
 
 def main() -> None:
@@ -141,31 +71,29 @@ def main() -> None:
     target_key = parse_key(args.key)
     recorder = Recorder()
     recorder.start_stream()
-    state = {"recording": False, "done": False}
+    done = False
 
     key_label = args.key
     print(
-        f"\nHold {key_label!r} to record, release to transcribe. "
-        f"Press Esc to quit.\n"
+        f"\nHold {key_label!r} to record, release to transcribe. Press Esc to quit.\n"
     )
 
     def on_press(key) -> None:
-        if state["done"]:
+        nonlocal done
+        if done:
             return
-        if key == target_key and not state["recording"]:
-            state["recording"] = True
+        if key == target_key and not recorder.recording:
             recorder.start()
             print("[recording] ", end="", flush=True)
 
     def on_release(key):
+        nonlocal done
         if key == keyboard.Key.esc:
-            state["done"] = True
-            if state["recording"]:
+            done = True
+            if recorder.recording:
                 recorder.stop()
-                state["recording"] = False
             return False
-        if key == target_key and state["recording"]:
-            state["recording"] = False
+        if key == target_key and recorder.recording:
             start = time.perf_counter()
             audio = recorder.stop()
             if audio is None or audio.size == 0:

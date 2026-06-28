@@ -62,16 +62,14 @@ if "PYSTRAY_BACKEND" not in os.environ:
 
 import numpy as np
 from PIL import Image, ImageDraw
-import sounddevice as sd
 import torch
 from pynput import keyboard
 from pystray import Icon, Menu, MenuItem
 
+from .audio import Recorder, transcribe
 from .model import LoadedModel, load_model
 from .notify import notify
 from .typing import TextTyper, make_typer
-
-SAMPLE_RATE = 16000
 
 COLOR_IDLE = (90, 90, 90, 255)
 COLOR_RECORDING = (220, 70, 70, 255)
@@ -178,76 +176,6 @@ def parse_combo(spec: str) -> set:
             else:
                 keys.add(k)
     return keys
-
-
-def transcribe(loaded: LoadedModel, audio: np.ndarray) -> str:
-    model = loaded.model
-    processor = loaded.processor
-    params = next(model.parameters())
-    device = params.device
-    dtype = params.dtype
-
-    inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-    inputs = {
-        k: v.to(device=device, dtype=dtype)
-        for k, v in inputs.items()
-        if isinstance(v, torch.Tensor)
-    }
-
-    with torch.no_grad():
-        if hasattr(model, "generate"):
-            predicted_ids = model.generate(**inputs)
-        else:
-            logits = model(**inputs).logits
-            predicted_ids = torch.argmax(logits, dim=-1)
-
-    text = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-    return text.strip()
-
-
-# ── audio recorder ───────────────────────────────────────────────────
-
-
-class Recorder:
-    def __init__(self) -> None:
-        self._chunks: list[np.ndarray] = []
-        self.recording = False
-        self._stream: sd.InputStream | None = None
-
-    def start_stream(self) -> None:
-        if self._stream is not None:
-            return
-        self._stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            callback=self._callback,
-        )
-        self._stream.start()
-
-    def stop_stream(self) -> None:
-        if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
-
-    def start(self) -> None:
-        if self.recording:
-            return
-        self._chunks = []
-        self.recording = True
-
-    def _callback(self, indata: np.ndarray, frames, time, status) -> None:  # noqa: A002
-        if self.recording:
-            self._chunks.append(indata.copy())
-
-    def stop(self) -> np.ndarray | None:
-        if not self.recording:
-            return None
-        self.recording = False
-        if not self._chunks:
-            return None
-        return np.concatenate(self._chunks, axis=0).flatten()
 
 
 # ── tray application ─────────────────────────────────────────────────
