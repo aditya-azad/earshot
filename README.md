@@ -1,61 +1,83 @@
 # earshot
 
-Speech-to-text experiments using HuggingFace transformers.
+Speech-to-text application for Linux using HuggingFace transformers.
 
-## Testing a model from the terminal
+## Installation
 
-`scripts/test_stt.py` lets you hold a key to record speech from your microphone
-and prints the model's transcription to the terminal.
+### Prerequisites
 
-### Usage
+Install [uv](https://docs.astral.sh/uv/) if you don't have it:
 
 ```sh
-uv run scripts/test_stt.py <model-id>
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Examples:
+### Quick start (editable)
 
 ```sh
-uv run scripts/test_stt.py openai/whisper-tiny
-uv run scripts/test_stt.py openai/whisper-large-v3
-uv run scripts/test_stt.py facebook/wav2vec2-base-960h
+uv sync
+```
+
+This installs all dependencies and the `earshot` package in **editable
+mode** — edits to the source take effect the next time you relaunch,
+with no reinstall needed.
+
+### Install (global command + desktop integration)
+
+A single script installs the global `earshot` command (editable, via
+`uv tool`) and the desktop integration (launcher entry + icon +
+wrapper):
+
+```sh
+scripts/install_linux.sh
+```
+
+The installed launcher runs the editable source from this project
+directory, so editing the code and relaunching picks up your changes
+immediately.
+
+To remove everything:
+
+```sh
+scripts/install_linux.sh --uninstall
+```
+
+## Usage
+
+### System-tray application
+
+```sh
+uv run earshot
+uv run earshot openai/whisper-tiny
+uv run earshot openai/whisper-tiny --key shift_r
+uv run earshot openai/whisper-tiny --key ctrl+space
+```
+
+The model defaults to `openai/whisper-tiny` (or `$EARSHOT_MODEL` if
+set).  The trigger key defaults to `shift_r` (or `$EARSHOT_KEY` if set).
+
+### Terminal tester
+
+```sh
+uv run test-stt
+uv run test-stt openai/whisper-tiny
+uv run test-stt openai/whisper-large-v3
+uv run test-stt facebook/wav2vec2-base-960h
 ```
 
 ### Controls
 
-- **Hold space** to record; **release** to transcribe.
-- **Esc** to quit.
+- **Tray app**: hold the trigger key to record; release to transcribe and
+  type.  Quit from the tray menu.
+- **Terminal tester**: hold space to record; release to transcribe.
+  Press Esc to quit.
 
-Run `uv run scripts/test_stt.py --help` for available options.
+Run `earshot --help` or `test-stt --help` for all options.
 
-### Notes
-
-- On Linux, `pynput` requires an active display session (X11 or a Wayland
-  session that supports global input events) to capture key presses.
-
-## Linux system-tray application
-
-`scripts/linux.py` runs as a background system-tray app. It types the
-transcription directly at your cursor using `xdotool` (X11) or `wtype`
-(Wayland).
-
-### Usage
-
-```sh
-uv run scripts/linux.py <model-id>
-uv run scripts/linux.py openai/whisper-tiny --key shift_r
-uv run scripts/linux.py openai/whisper-tiny --key ctrl+space
-```
-
-### Controls
-
-- **Hold the trigger key** to record; **release** to transcribe and type.
-- Quit from the tray menu.
-
-Run `uv run scripts/linux.py --help` for available options.
-
-### Requirements
+## Requirements
 
 - GNOME `AppIndicator` extension (or equivalent KStatusNotifierItem support)
 - `notify-send` for desktop notifications
 - `xdotool` (X11) or `wtype` (Wayland) for typing
+- On Linux, `pynput` requires an active display session (X11 or a Wayland
+  session that supports global input events) to capture key presses.

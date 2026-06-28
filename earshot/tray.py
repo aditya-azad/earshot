@@ -23,17 +23,18 @@ KStatusNotifierItem support) for the tray icon, ``notify-send`` for
 desktop notifications, and ``xdotool`` / ``wtype`` for typing.
 
 Usage:
-    uv run scripts/linux.py openai/whisper-tiny
-    uv run scripts/linux.py openai/whisper-tiny --key shift_r
-    uv run scripts/linux.py openai/whisper-tiny --key ctrl+space
+    earshot openai/whisper-tiny
+    earshot openai/whisper-tiny --key shift_r
+    earshot openai/whisper-tiny --key ctrl+space
+    earshot                  # uses $EARSHOT_MODEL or openai/whisper-tiny
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import threading
-from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -42,11 +43,9 @@ import torch
 from pynput import keyboard
 from pystray import Icon, Menu, MenuItem
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.model import LoadedModel, load_model
-from src.notify import notify
-from src.typing import TextTyper, make_typer
+from .model import LoadedModel, load_model
+from .notify import notify
+from .typing import TextTyper, make_typer
 
 SAMPLE_RATE = 16000
 
@@ -58,13 +57,23 @@ COLOR_TRANSCRIBING = (70, 130, 220, 255)
 # ── helpers ──────────────────────────────────────────────────────────
 
 
+def _ear(
+    color: tuple[int, int, int, int], cx: int, width: int, tilt: float
+) -> Image.Image:
+    ear = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    ImageDraw.Draw(ear).ellipse(
+        [cx - width // 2, 0, cx + width // 2, 34], fill=color
+    )
+    return ear.rotate(tilt, center=(cx, 17), resample=Image.Resampling.BICUBIC)
+
+
 def make_icon(color: tuple[int, int, int, int]) -> Image.Image:
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    img.alpha_composite(_ear(color, 19, 15, 25))
+    img.alpha_composite(_ear(color, 45, 15, -25))
     draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([24, 6, 40, 34], radius=8, fill=color)
-    draw.arc([18, 18, 46, 48], 180, 360, fill=color, width=3)
-    draw.rectangle([30, 38, 34, 50], fill=color)
-    draw.rectangle([22, 50, 42, 54], fill=color)
+    draw.ellipse([21, 24, 43, 48], fill=color)
+    draw.ellipse([28, 42, 36, 52], fill=color)
     return img
 
 
@@ -392,15 +401,24 @@ class TrayApp:
 
 
 def main() -> None:
+    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-tiny")
+    default_key = os.environ.get("EARSHOT_KEY", "shift_r")
+
     parser = argparse.ArgumentParser(
         description="System-tray speech-to-text application for Linux."
     )
-    parser.add_argument("model", help="HuggingFace model id, e.g. openai/whisper-tiny")
+    parser.add_argument(
+        "model",
+        nargs="?",
+        default=default_model,
+        help=f"HuggingFace model id (default: {default_model}, "
+        "or $EARSHOT_MODEL if set)",
+    )
     parser.add_argument(
         "--key",
-        default="shift_r",
-        help="Key (combination) to hold while recording (default: shift_r, "
-        "the right Shift key). Combine keys with '+', e.g. 'ctrl+space', "
+        default=default_key,
+        help=f"Key (combination) to hold while recording (default: {default_key}, "
+        "or $EARSHOT_KEY if set). Combine keys with '+', e.g. 'ctrl+space', "
         "'shift_r+space', 'r'. Use 'shift_r'/'ctrl_r'/'alt_r' to require a "
         "specific right-side modifier; 'shift'/'ctrl'/'alt' match either side.",
     )

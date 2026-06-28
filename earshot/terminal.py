@@ -5,27 +5,25 @@ Hold the trigger key (default: space) to record from the microphone;
 release it to run the loaded model and print the transcribed text.
 
 Usage:
-    uv run scripts/test_stt.py openai/whisper-tiny
-    uv run scripts/test_stt.py openai/whisper-tiny --key space
-    uv run scripts/test_stt.py facebook/wav2vec2-base-960h
+    earshot-test openai/whisper-tiny
+    earshot-test openai/whisper-tiny --key space
+    earshot-test facebook/wav2vec2-base-960h
 
 Press Esc to quit.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 import torch
 from pynput import keyboard
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.model import LoadedModel, load_model
+from .model import LoadedModel, load_model
 
 SAMPLE_RATE = 16000
 
@@ -113,10 +111,18 @@ class Recorder:
 
 
 def main() -> None:
+    default_model = os.environ.get("EARSHOT_MODEL", "openai/whisper-tiny")
+
     parser = argparse.ArgumentParser(
         description="Hold a key to record speech and print the model's transcription."
     )
-    parser.add_argument("model", help="HuggingFace model id, e.g. openai/whisper-tiny")
+    parser.add_argument(
+        "model",
+        nargs="?",
+        default=default_model,
+        help=f"HuggingFace model id (default: {default_model}, "
+        "or $EARSHOT_MODEL if set)",
+    )
     parser.add_argument(
         "--key",
         default="space",

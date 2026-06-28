@@ -165,20 +165,16 @@ nvtx = [
 [[package]]
 name = "earshot"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy" },
+    { name = "pillow" },
     { name = "pynput" },
+    { name = "pystray" },
     { name = "sounddevice" },
     { name = "torch" },
     { name = "transformers" },
-]
-
-[package.optional-dependencies]
-linux = [
-    { name = "pillow" },
-    { name = "pystray" },
 ]
 
 [package.dev-dependencies]
@@ -191,14 +187,13 @@ dev = [
 requires-dist = [
     { name = "huggingface-hub", specifier = ">=1.21.0" },
     { name = "numpy", specifier = ">=2.5.0" },
-    { name = "pillow", marker = "extra == 'linux'", specifier = ">=11.0.0" },
+    { name = "pillow", specifier = ">=11.0.0" },
     { name = "pynput", specifier = ">=1.8.2" },
-    { name = "pystray", marker = "extra == 'linux'", specifier = ">=0.19.5" },
+    { name = "pystray", specifier = ">=0.19.5" },
     { name = "sounddevice", specifier = ">=0.5.5" },
     { name = "torch", specifier = ">=2.6.0" },
     { name = "transformers", specifier = ">=5.12.1" },
 ]
-provides-extras = ["linux"]
 
 [package.metadata.requires-dev]
 dev = [

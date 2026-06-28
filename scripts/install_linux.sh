@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+#
+# Install Earshot on Linux: global command + desktop integration.
+#
+#   - Installs the `earshot` command system-wide (editable, via uv tool)
+#   - Creates a .desktop entry, an icon, and a launcher wrapper so
+#     Earshot appears in your application launcher
+#
+# The installed launcher runs the editable source from this project
+# directory, so editing the code and relaunching picks up your changes
+# immediately.
+#
+# Usage:
+#   scripts/install_linux.sh             # install
+#   scripts/install_linux.sh --uninstall # remove
+#
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+APP_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons/hicolor/64x64/apps"
+BIN_DIR="$HOME/.local/bin"
+DESKTOP_FILE="$APP_DIR/earshot.desktop"
+ICON_FILE="$ICON_DIR/earshot.png"
+WRAPPER="$BIN_DIR/earshot-launch"
+
+uninstall=false
+
+usage() {
+    sed -n '2,/^$/p' "$0" | sed 's/^# \?//' >&2
+    exit "${1:-0}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --uninstall) uninstall=true ;;
+        --help|-h)   usage 0 ;;
+        *) echo "Unknown option: $1" >&2; usage 2 ;;
+    esac
+    shift
+done
+
+# Resolve uv to its full path so the launcher works in GUI sessions
+# where the user's shell PATH may not be set.
+UV="$(command -v uv || true)"
+if [[ -z "$UV" ]]; then
+    echo "uv not found on PATH.  Install it: https://docs.astral.sh/uv/" >&2
+    exit 1
+fi
+
+# ── uninstall ─────────────────────────────────────────────────────────
+
+if $uninstall; then
+    rm -f "$DESKTOP_FILE" "$ICON_FILE" "$WRAPPER"
+    update-desktop-database "$APP_DIR" 2>/dev/null || true
+    uv tool uninstall earshot 2>/dev/null || true
+    echo "Removed desktop entry, icon, launcher, and global earshot command."
+    exit 0
+fi
+
+# ── global command ────────────────────────────────────────────────────
+
+uv tool install --editable "$PROJECT_DIR"
+
+# ── desktop integration ───────────────────────────────────────────────
+
+mkdir -p "$APP_DIR" "$ICON_DIR" "$BIN_DIR"
+
+# icon ──────────────────────────────────────────────────────────────
+
+"$UV" run --project "$PROJECT_DIR" python3 -c "
+from PIL import Image, ImageDraw
+
+color = (90, 90, 90, 255)
+
+def ear(cx, width, tilt):
+    e = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+    ImageDraw.Draw(e).ellipse([cx - width // 2, 0, cx + width // 2, 34], fill=color)
+    return e.rotate(tilt, center=(cx, 17), resample=Image.Resampling.BICUBIC)
+
+img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+img.alpha_composite(ear(19, 15, 25))
+img.alpha_composite(ear(45, 15, -25))
+d = ImageDraw.Draw(img)
+d.ellipse([21, 24, 43, 48], fill=color)
+d.ellipse([28, 42, 36, 52], fill=color)
+img.save('$ICON_FILE')
+print('Icon  -> $ICON_FILE')
+"
+
+# launcher wrapper ──────────────────────────────────────────────────
+#
+# Use the full path to uv + --project so the editable source in this
+# directory is always used, regardless of PATH (which GUI sessions
+# may not inherit from the shell).
+
+cat > "$WRAPPER" << EOF
+#!/usr/bin/env bash
+exec "$UV" run --project "$PROJECT_DIR" earshot "\$@"
+EOF
+chmod +x "$WRAPPER"
+echo "Launcher -> $WRAPPER"
+
+# .desktop entry ────────────────────────────────────────────────────
+
+cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Type=Application
+Name=Earshot
+Comment=Speech-to-text transcription
+Exec=$WRAPPER
+Icon=earshot
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=speech;voice;dictation;transcription;
+EOF
+
+update-desktop-database "$APP_DIR" 2>/dev/null || true
+echo "Desktop -> $DESKTOP_FILE"
+
+echo ""
+echo "Done.  Earshot should now appear in your application launcher"
+echo "and be available as the \`earshot\` command."
+echo "Edit the code in $PROJECT_DIR and relaunch to pick up changes."

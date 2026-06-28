@@ -1,23 +1,27 @@
 [project]
 name = "earshot"
 version = "0.1.0"
-description = "Add your description here"
+description = "System-tray speech-to-text application for Linux."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "huggingface-hub>=1.21.0",
     "numpy>=2.5.0",
+    "Pillow>=11.0.0",
     "pynput>=1.8.2",
+    "pystray>=0.19.5",
     "sounddevice>=0.5.5",
     "torch>=2.6.0",
     "transformers>=5.12.1",
 ]
 
-[project.optional-dependencies]
-linux = [
-    "pystray>=0.19.5",
-    "Pillow>=11.0.0",
-]
+[project.scripts]
+earshot = "earshot.tray:main"
+test-stt = "earshot.terminal:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.pyrefly]
 project-includes = [
