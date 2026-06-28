@@ -82,7 +82,7 @@ Run `earshot --help` or `test-stt --help` for all options.
 - On Linux, `pynput` requires an active display session (X11 or a Wayland
   session that supports global input events) to capture key presses.
 
-## Other OS support
+## OS support
 
 - [x] Linux
 - [ ] MacOS
